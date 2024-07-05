@@ -119,7 +119,7 @@ def galight_prior_loop(object, data_dir, psf_dir, save_dir):
 
 
 def fit_object(object, data_dir, psf_dir, save_dir):
-    ''' Executes all necessary functions to fit all filters of an object.
+    ''' Executes all necessary functions to fit all filters of an object. Assumes PSFs already exist.
 
     Parameters: 
     -----------

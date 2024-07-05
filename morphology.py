@@ -1,3 +1,6 @@
+''' Functions to analyze the morphologies of galaxies by fitting Sersic profiles to photometry data.
+'''
+
 import os, glob, corner, sys
 import numpy as np
 import pickle as pkl
@@ -16,14 +19,29 @@ support_dir = '/Users/jmark/OneDrive/Desktop/DARK REU/morphology_fitting/support
 
 sys.path.insert(0, support_dir)
 
-# import photometry
-NIRCam_SW_filters = ['f090w', 'f115w', 'f150w', 'f182m', 'f200w', 'f210m']
-NIRCam_LW_filters = ['f277w', 'f335m', 'f356w', 'f410m', 'f430m', 'f444w', 'f460m', 'f480m']
-MIRI_filters = ['f560w', 'f770w', 'f1000w', 'f1130w', 'f1280w', 'f1500w', 'f1800w', 'f2100w', 'f2550w']
+def make_PSFs(psf_dir, pixelscales=[0.02, 0.04], use_NIRCam=True, use_MIRI=False):
+    ''' Generates PSFs for all NIRCam and/or MIRI filters and saves them to a directory.
 
+    Parameters: 
+    -----------
+        psf_dir: str
+            File path to where the outputted .fits PSF files are saved to.
+        pixelscales: list of float
+            All pixel scales to generate PSFs for.
+        PSF_fine_sampling: int
 
-# makes PSFs for all NIRCam and/or MIRI filters
-def make_PSFs(psf_dir, pixelscales=[0.02, 0.04], PSF_fine_sampling=1, use_NIRCam=True, use_MIRI=False):
+        use_NIRCam: bool
+            If PSFs for JWST NIRCam filters should be generated.
+        use_MIRI: bool
+            If PSFs for JWST MIRI filters should be generated.
+    '''
+
+    # import photometry
+    NIRCam_SW_filters = ['f090w', 'f115w', 'f150w', 'f182m', 'f200w', 'f210m']
+    NIRCam_LW_filters = ['f277w', 'f335m', 'f356w', 'f410m', 'f430m', 'f444w', 'f460m', 'f480m']
+    MIRI_filters = ['f560w', 'f770w', 'f1000w', 'f1130w', 'f1280w', 'f1500w', 'f1800w', 'f2100w', 'f2550w']
+        
+    PSF_fine_sampling=1
 
     # make the PSF directory
     if not os.path.exists(psf_dir): os.mkdir(psf_dir)
@@ -63,8 +81,25 @@ def make_PSFs(psf_dir, pixelscales=[0.02, 0.04], PSF_fine_sampling=1, use_NIRCam
             psf.writeto(f'{psf_dir}/{filter}_{pixelscale}.fits')
 
 
-# Fits sersic profile to object with a certain PSF filter. Should be ran with stacked image and stacked PSF. save_path is also where the image should be
-def galight_free(object, filter, psf_dir, save_dir):
+def galight_free(object, filter, save_dir):
+    ''' Fits sersic profile to object with a stacked image and stacked PSF.
+
+    Parameters: 
+    -----------
+        object: str 
+            The program ID and object ID of the object being fitted in the form f'{program_ID}_{object_ID}'.
+        filter: str
+            Filter for the PSF used. Should be 'SW' for the stacked PSF.
+        save_dir: str
+            File path to where the outputed stacked .fits files, .pdf plots, and .pkl dictionaries are saved to for all programs. The 
+            stacked images and PSFs used in this function are stored here in their object folder.
+    
+    Returns:
+    --------
+        galight_dict: dict
+            Contains Sersic and other paramters of the fit.
+    '''
+
     # config
     program_ID = object.split('_')[0]
     object_ID = object.split('_')[1]
@@ -104,7 +139,7 @@ def galight_free(object, filter, psf_dir, save_dir):
 
     radius = 1.2/pixelscale # arcsec/arcsec
     data_process.generate_target_materials(radius=radius, create_mask=False, if_plot=False,
-                                           nsigma=1.7, exp_sz=1.5, npixels=5,
+                                           nsigma=2.2, exp_sz=1.5, npixels=3,
                                            detect=True, detection_path=save_path)
 
     # add the PSF
@@ -175,8 +210,29 @@ def galight_free(object, filter, psf_dir, save_dir):
     return galight_dict
 
 
-# Fits an object using some fixed sersic paramters from galight_free(). Should be ran on individual fiter images and their corresponding PSFs
 def galight_prior(object, data_dir, psf_dir, save_dir, filter):
+    ''' Fits an object using some fixed sersic paramters from galight_free(). Should be ran on individual fiter images and their 
+    corresponding PSFs.
+
+    Parameters: 
+    -----------
+        object: str 
+            The program ID and object ID of the object being fitted in the form f'{program_ID}_{object_ID}'.
+        data_dir: str
+            File path to where NIRCam and MIRI data are stored for all programs.
+        psf_dir: str
+            File path to where the .fits PSF files for filters are stored.
+        save_dir: str
+            File path to where the outputed stacked .fits files, .pdf plots, and .pkl dictionaries are saved to for all programs.
+        filter: str
+            Filter of the .fits sci file for the object to fit.
+    
+    Returns:
+    --------
+        galight_dict: dict
+            Contains Sersic and other paramters of the fit.
+    '''
+
     # config
     program_ID = int(object.split('_')[0])
     object_ID  = object.split('_')[1]
