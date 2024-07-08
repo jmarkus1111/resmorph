@@ -85,7 +85,7 @@ def get_filter_list(object, data_dir, z):
     return filter_list
 
  
-def galight_prior_loop(object, data_dir, psf_dir, save_dir):
+def galight_prior_loop(object, data_dir, psf_dir, save_dir, npixels, nsigma):
     ''' Runs galight_prior on all images and their corresponding PSFs for the object.
 
     Parameters: 
@@ -98,6 +98,11 @@ def galight_prior_loop(object, data_dir, psf_dir, save_dir):
             File path to where the .fits PSF files for filters are stored.
         save_dir: str
             File path to where the outputed stacked .fits files, .pdf plots, and .pkl dictionaries are saved to for all programs.
+        nsigma: float
+            The value for Galight paramter nsigma used. The s/n defined to detect all the objects in the image stamp.
+        npixels: int
+            The value for Galight paramter nsigma used. The number of connected pixels, each greater than threshold, that an object must
+            have to be detected.
     '''
 
     program_ID = object.split('_')[0]
@@ -115,10 +120,10 @@ def galight_prior_loop(object, data_dir, psf_dir, save_dir):
         for img in img_filters:
             if filter + '_' in img and 'm' not in filter: # avoid convolved and m filters
                 print(filter + ':')
-                galight_prior(object, data_dir, psf_dir, save_dir, filter)
+                galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels)
 
 
-def fit_object(object, data_dir, psf_dir, save_dir):
+def fit_object(object, data_dir, psf_dir, save_dir, nsigma, npixels):
     ''' Executes all necessary functions to fit all filters of an object. Assumes PSFs already exist.
 
     Parameters: 
@@ -131,6 +136,11 @@ def fit_object(object, data_dir, psf_dir, save_dir):
             File path to where the .fits PSF files for filters are stored.
         save_dir: str
             File path to where the outputed stacked .fits files, .pdf plots, and .pkl dictionaries are saved to for all programs.
+        nsigma: float
+            The value for Galight paramter nsigma used. The s/n defined to detect all the objects in the image stamp.
+        npixels: int
+            The value for Galight paramter nsigma used. The number of connected pixels, each greater than threshold, that an object must
+            have to be detected.
     '''
 
     z = get_z(object, data_dir)
@@ -140,11 +150,11 @@ def fit_object(object, data_dir, psf_dir, save_dir):
     make_stacked_PSF(object, data_dir, psf_dir, save_dir, filter_list)
     make_stacked_image(object, data_dir, save_dir, filter_list)
 
-    galight_free(object, 'SW', psf_dir, save_dir)
-    galight_prior_loop(object, data_dir, psf_dir, save_dir)
+    galight_free(object, 'SW', save_dir, nsigma, npixels)
+    galight_prior_loop(object, data_dir, psf_dir, save_dir, nsigma, npixels)
 
  
-def fit_all_objects(data_dir, psf_dir, save_dir):
+def fit_all_objects(data_dir, psf_dir, save_dir, nsigma=1.9, npixels=4):
     ''' Calls fit_object on all objects in all programs.
 
     Parameters: 
@@ -155,14 +165,19 @@ def fit_all_objects(data_dir, psf_dir, save_dir):
             File path to where the .fits PSF files for filters are stored.
         save_dir: str
             File path to where the outputed stacked .fits files, .pdf plots, and .pkl dictionaries are saved to for all programs.
+        nsigma: float
+            The value for Galight paramter nsigma used. The s/n defined to detect all the objects in the image stamp.
+        npixels: int
+            The value for Galight paramter nsigma used. The number of connected pixels, each greater than threshold, that an object must
+            have to be detected.
     '''
 
-    programs = os.listdir(data_dir)
-    for program in programs:
+    programs = os.listdir(data_dir) 
+    for program in sorted(programs, key=int): # sort in ascending order
         objects = os.listdir(f'{data_dir}/{program}')[0:-1] # exclude redshifts_dict.pkl
-        for object in objects:
+        for object in sorted(objects, key=int): # sort in ascending order
             print(f'Fitting object {program}_{object}: ################################################################################')
-            fit_object(f'{program}_{object}', data_dir, psf_dir, save_dir)
+            fit_object(f'{program}_{object}', data_dir, psf_dir, save_dir, nsigma, npixels)
 
 
 def merge_plots(save_dir, program_ID, nsigma, npixels, output_dir):

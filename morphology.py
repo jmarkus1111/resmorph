@@ -1,4 +1,6 @@
 ''' Functions to analyze the morphologies of galaxies by fitting Sersic profiles to photometry data.
+
+    galight_free should be executed with a stacked image and PSF before executing galight_prior on multiple individual images.
 '''
 
 import os, glob, corner, sys
@@ -81,7 +83,7 @@ def make_PSFs(psf_dir, pixelscales=[0.02, 0.04], use_NIRCam=True, use_MIRI=False
             psf.writeto(f'{psf_dir}/{filter}_{pixelscale}.fits')
 
 
-def galight_free(object, filter, save_dir):
+def galight_free(object, filter, save_dir, nsigma, npixels):
     ''' Fits sersic profile to object with a stacked image and stacked PSF.
 
     Parameters: 
@@ -93,6 +95,10 @@ def galight_free(object, filter, save_dir):
         save_dir: str
             File path to where the outputed stacked .fits files, .pdf plots, and .pkl dictionaries are saved to for all programs. The 
             stacked images and PSFs used in this function are stored here in their object folder.
+        nsigma: float
+            The s/n defined to detect all the objects in the image stamp.
+        npixels: int
+            The number of connected pixels, each greater than threshold, that an object must have to be detected.
     
     Returns:
     --------
@@ -139,7 +145,7 @@ def galight_free(object, filter, save_dir):
 
     radius = 1.2/pixelscale # arcsec/arcsec
     data_process.generate_target_materials(radius=radius, create_mask=False, if_plot=False,
-                                           nsigma=2.2, exp_sz=1.5, npixels=3,
+                                           nsigma=nsigma, exp_sz=1.5, npixels=npixels,
                                            detect=True, detection_path=save_path)
 
     # add the PSF
@@ -210,7 +216,7 @@ def galight_free(object, filter, save_dir):
     return galight_dict
 
 
-def galight_prior(object, data_dir, psf_dir, save_dir, filter):
+def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels):
     ''' Fits an object using some fixed sersic paramters from galight_free(). Should be ran on individual fiter images and their 
     corresponding PSFs.
 
@@ -226,6 +232,11 @@ def galight_prior(object, data_dir, psf_dir, save_dir, filter):
             File path to where the outputed stacked .fits files, .pdf plots, and .pkl dictionaries are saved to for all programs.
         filter: str
             Filter of the .fits sci file for the object to fit.
+        nsigma: float
+            The s/n defined to detect all the objects in the image stamp.
+        npixels: int
+            The number of connected pixels, each greater than threshold, that an object must
+            have to be detected.
     
     Returns:
     --------
@@ -272,7 +283,7 @@ def galight_prior(object, data_dir, psf_dir, save_dir, filter):
 
     radius = 1/pixelscale # arcsec/arcsec
     data_process.generate_target_materials(radius=radius, create_mask=False, if_plot=False,
-                                           nsigma=1.7, exp_sz=1.5, npixels=15,
+                                           nsigma=nsigma, exp_sz=1.5, npixels=npixels,
                                            detect=False, detection_path=save_path)
 
     # add the PSF
