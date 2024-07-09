@@ -64,7 +64,7 @@ def get_filter_list(object, data_dir, z):
     LyAlpha = 1215.67
     shifted_LyAlpha = LyAlpha * (z + 1)
 
-    # dict of all JWST short wavelength filter and their respective wavelength interval
+    # dict of all JWST short wavelength filters and their respective wavelength interval in angstroms
     SW_filters = {'f070w': [6048.20, 7927.07], 'f090w': [7881.88, 10243.08], 'f115w': [9975.60, 13058.40], 'f140m': [13042.25, 15058.58], 
                 'f150w': [13041.19, 16948.89], 'f162m': [15126.16, 17439.17], 'f164n': [16171.41, 16717.72], 
                 'f150w2': [9774.71, 23946.87], 'f182m': [16959.53, 20010.97], 'f187n': [18445.28, 19029.98], 
@@ -175,7 +175,7 @@ def fit_all_objects(data_dir, psf_dir, save_dir, nsigma=1.9, npixels=4):
     programs = os.listdir(data_dir) 
     for program in sorted(programs, key=int): # sort in ascending order
         objects = os.listdir(f'{data_dir}/{program}')[0:-1] # exclude redshifts_dict.pkl
-        for object in sorted(objects, key=int): # sort in ascending order
+        for object in sorted(objects, key=int)[sorted(objects, key=int).index('1598'):]: # sort in ascending order
             print(f'Fitting object {program}_{object}: ################################################################################')
             fit_object(f'{program}_{object}', data_dir, psf_dir, save_dir, nsigma, npixels)
 
