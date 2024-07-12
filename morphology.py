@@ -122,7 +122,6 @@ def galight_free(object, filter, save_dir, nsigma, npixels):
     sci_file = glob.glob(f'{save_path}/*{object_ID}*sci*')[0]
     sci_data = fits.open(sci_file)[0].data
 
-
     wht_file = glob.glob(f'{save_path}/*{object_ID}*wht*')[0]
     wht_data = fits.open(wht_file)[0].data
     err_data = np.power(wht_data, -0.5)
