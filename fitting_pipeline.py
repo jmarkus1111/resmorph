@@ -151,7 +151,7 @@ def fit_object(object, data_dir, psf_dir, save_dir, nsigma, npixels):
     make_stacked_image(object, data_dir, save_dir, filter_list)
 
     galight_free(object, 'SW', save_dir, nsigma, npixels)
-    galight_prior_loop(object, data_dir, psf_dir, save_dir, nsigma, npixels)
+    # galight_prior_loop(object, data_dir, psf_dir, save_dir, nsigma, npixels)
 
  
 def fit_all_objects(data_dir, psf_dir, save_dir, nsigma=1.9, npixels=4):
@@ -201,7 +201,7 @@ def merge_plots(save_dir, program_ID, nsigma, npixels, output_dir):
     pdf_list = []
 
     objects = os.listdir(f'{save_dir}/{program_ID}')
-    for object in objects:
+    for object in objects: # TODO: assemble in ascending order
         pdf_list.append(f'{save_dir}/{program_ID}/{object}/galight_SW_galaxy_final_plot.pdf')
 
     pdf_merger = PyPDF2.PdfMerger()
@@ -209,5 +209,5 @@ def merge_plots(save_dir, program_ID, nsigma, npixels, output_dir):
     for pdf in pdf_list:
         pdf_merger.append(pdf)
 
-    with open(f'{output_dir}/{program_ID}_merged_pdf_{str(nsigma)}_{str(npixels)}.pdf', 'wb') as output_pdf:
+    with open(f'{output_dir}/{program_ID}_merged_pdf_bulge_{str(nsigma)}_{str(npixels)}.pdf', 'wb') as output_pdf:
         pdf_merger.write(output_pdf)

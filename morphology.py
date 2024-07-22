@@ -15,7 +15,7 @@ from galight.fitting_specify_Danial import FittingSpecify
 from galight.fitting_process_Danial import FittingProcess
 os.environ['WEBBPSF_PATH'] = '/Users/jmark/OneDrive/Desktop/DARK REU/morphology_fitting/webbpsf-data'
 
-results_dir = f'/Users/jmark/OneDrive/Desktop/DARK REU/morphology_fitting/morph/results'
+results_dir = '/Users/jmark/OneDrive/Desktop/DARK REU/morphology_fitting/morph/results'
 if not os.path.exists(results_dir): os.mkdir(results_dir)
 support_dir = '/Users/jmark/OneDrive/Desktop/DARK REU/morphology_fitting/support'
 
@@ -83,7 +83,7 @@ def make_PSFs(psf_dir, pixelscales=[0.02, 0.04], use_NIRCam=True, use_MIRI=False
             psf.writeto(f'{psf_dir}/{filter}_{pixelscale}.fits')
 
 
-def galight_free(object, filter, save_dir, nsigma, npixels):
+def galight_free(object, filter, save_dir, nsigma, npixels, fit_bulge=False):
     ''' Fits sersic profile to object with a stacked image and stacked PSF.
 
     Parameters: 
@@ -99,6 +99,8 @@ def galight_free(object, filter, save_dir, nsigma, npixels):
             The s/n defined to detect all the objects in the image stamp.
         npixels: int
             The number of connected pixels, each greater than threshold, that an object must have to be detected.
+        fit_bulge: bool
+            If the function should fit a separate Sersic profile to the bulge.
     
     Returns:
     --------
@@ -153,21 +155,72 @@ def galight_free(object, filter, save_dir, nsigma, npixels):
     # check if everything is there before attempting the run
     data_process.checkout()
 
-    # sett up the model
+    # fit bulge separately if specified with fit_bulge
+    if fit_bulge == True:
+        # modify the fitting of the component (i.e., galaxy) id = 0 into to components (i.e., bulge + disk)
+        import copy
+        apertures = copy.deepcopy(data_process.apertures)
+        comp_id = 0 
+        add_aperture0 = copy.deepcopy(apertures[comp_id])
+        # this setting assigns comp0 as 'bulge' and comp1 as 'disk'
+        add_aperture0.a, add_aperture0.b = add_aperture0.a/2, add_aperture0.b/2
+        apertures = apertures[:comp_id] + [add_aperture0] + apertures[comp_id:]
+        data_process.apertures = apertures # pass apertures to the data_process
+
+        # adding a prior so that 1)the size of the bulge is within a range to the disk size, 2) disk have more ellipticity
+        import lenstronomy.Util.param_util as param_util
+        def condition_bulgedisk(kwargs_lens, kwargs_source, kwargs_lens_light, kwargs_ps, kwargs_special, kwargs_extinction, kwargs_tracer_source):
+            logL = 0
+            # note that the Comp[0] is the bulge and the Comp[1] is the disk
+            phi0, q0 = param_util.ellipticity2phi_q(kwargs_lens_light[0]['e1'], kwargs_lens_light[0]['e2'])
+            phi1, q1 = param_util.ellipticity2phi_q(kwargs_lens_light[1]['e1'], kwargs_lens_light[1]['e2'])
+            cond_0 = (kwargs_lens_light[0]['R_sersic'] > kwargs_lens_light[1]['R_sersic'] * 0.9)
+            cond_1 = (kwargs_lens_light[0]['R_sersic'] < kwargs_lens_light[1]['R_sersic']*0.15)
+            cond_2 = (q0 < q1)
+            if cond_0 or cond_1 or cond_2:
+                logL -= 10**15
+            return logL
+
+        # set up the model
+        fit_sepc = FittingSpecify(data_process)
+        # the 'fix_n_list' will fix Sersic_n as 4 for the comp0 (bulge), and as 1 for the comp1 (disk).
+        fit_sepc.prepare_fitting_seq(point_source_num = 0, fix_n_list= [[0,4], [1,1]]) 
+        fit_sepc.build_fitting_seq()
+        # fit_sepc.plot_fitting_sets()
+
+    # set up the model
     fit_sepc = FittingSpecify(data_process)
-    fit_sepc.prepare_fitting_seq(point_source_num = 0)
+    fit_sepc.prepare_fitting_seq(point_source_num = 0) 
     fit_sepc.build_fitting_seq()
+    # fit_sepc.plot_fitting_sets() # to see object slections 
 
     # set up the fitting method and run
     savename = f'{save_path}/galight_{filter}'
     fit_run = FittingProcess(fit_sepc, savename=savename, fitting_level=['shallow', 'deep'])
     fit_run.run(algorithm_list = ['MCMC', 'MCMC'])
 
+    # TODO: make into separate function-------------------------------------------------------------------------------------------------
+    # sum residual 
+    data = fit_run.fitting_specify_class.kwargs_data['image_data']
+    galaxy_list = fit_run.image_host_list
+    galaxy_image = np.zeros_like(galaxy_list[0])
+    for i in range(len(galaxy_list)):
+        galaxy_image = galaxy_image+galaxy_list[i]
+    model = galaxy_image
+
+    weighted_residual = (data - model) / model  
+    residual_sum = sum(map(sum, np.abs(weighted_residual))) # sum absolute value of all elements of 2d array 
+    #----------------------------------------------------------------------------------------------------------------------------------
+
     # save the results
 
     # save the plots
     fit_run.model_plot(save_plot=True, show_plot=False)
     fit_run.plot_final_galaxy_fit(target_ID=object, save_plot=True, show_plot=False)
+
+
+    print(list(fit_run.fitting_specify_class.kwargs_data.keys()))
+
 
     # change the name of the saved plot
     src = f'{save_path}/galight_{filter}_galaxy_final_plot.pdf'
@@ -208,6 +261,9 @@ def galight_free(object, filter, save_dir, nsigma, npixels):
     galight_dict['config']['filter'] = filter
     galight_dict['config']['pixelscale'] = pixelscale
 
+    # save the summed residual 
+    galight_dict['residual_sum'] = residual_sum
+
     # save the dictionary
     with open(f'{results_dir}/{object}_{filter}.pkl', 'wb') as handle:
         pkl.dump(galight_dict, handle, protocol=pkl.HIGHEST_PROTOCOL)
@@ -215,7 +271,7 @@ def galight_free(object, filter, save_dir, nsigma, npixels):
     return galight_dict
 
 
-def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels):
+def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels, fit_bulge=True):
     ''' Fits an object using some fixed sersic paramters from galight_free(). Should be ran on individual fiter images and their 
     corresponding PSFs.
 
@@ -236,6 +292,8 @@ def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels):
         npixels: int
             The number of connected pixels, each greater than threshold, that an object must
             have to be detected.
+        fit_bulge: bool
+            If the function should fit a separate Sersic profile to the bulge.
     
     Returns:
     --------
@@ -291,9 +349,36 @@ def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels):
     # check if everything is there before attempting the run
     data_process.checkout()
 
+    # fit bulge separately if specified with fit_bulge
+    if fit_bulge == True:
+        # modify the fitting of the component (i.e., galaxy) id = 0 into to components (i.e., bulge + disk)
+        import copy
+        apertures = copy.deepcopy(data_process.apertures)
+        comp_id = 0 
+        add_aperture0 = copy.deepcopy(apertures[comp_id])
+        # this setting assigns comp0 as 'bulge' and comp1 as 'disk'
+        add_aperture0.a, add_aperture0.b = add_aperture0.a/2, add_aperture0.b/2
+        apertures = apertures[:comp_id] + [add_aperture0] + apertures[comp_id:]
+        data_process.apertures = apertures # pass apertures to the data_process
+
+        # adding a prior so that 1)the size of the bulge is within a range to the disk size, 2) disk have more ellipticity
+        import lenstronomy.Util.param_util as param_util
+        def condition_bulgedisk(kwargs_lens, kwargs_source, kwargs_lens_light, kwargs_ps, kwargs_special, kwargs_extinction):
+            logL = 0
+            # note that the Comp[0] is the bulge and the Comp[1] is the disk
+            phi0, q0 = param_util.ellipticity2phi_q(kwargs_lens_light[0]['e1'], kwargs_lens_light[0]['e2'])
+            phi1, q1 = param_util.ellipticity2phi_q(kwargs_lens_light[1]['e1'], kwargs_lens_light[1]['e2'])
+            cond_0 = (kwargs_lens_light[0]['R_sersic'] > kwargs_lens_light[1]['R_sersic'] * 0.9)
+            cond_1 = (kwargs_lens_light[0]['R_sersic'] < kwargs_lens_light[1]['R_sersic']*0.15)
+            cond_2 = (q0 < q1)
+            if cond_0 or cond_1 or cond_2:
+                logL -= 10**15
+            return logL
+
+
     # set up the model
     fit_sepc = FittingSpecify(data_process)
-    fit_sepc.prepare_fitting_seq(point_source_num = 0)
+    fit_sepc.prepare_fitting_seq(point_source_num = 0) # running with condition=condition_bulgedisk breaks 
     fit_sepc.build_fitting_seq()
 
     # set up the prior (init, sigma, fixed, lower, upper)
@@ -379,6 +464,20 @@ def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels):
     fit_run = FittingProcess(fit_sepc, savename=savename, fitting_level=['shallow', 'deep'])
     fit_run.run(algorithm_list = ['MCMC', 'MCMC'])
 
+    # sum residual 
+    data = fit_run.fitting_specify_class.kwargs_data['image_data']
+    noise = fit_run.fitting_specify_class.kwargs_data['noise_map']
+    galaxy_list = fit_run.image_host_list
+    galaxy_image = np.zeros_like(galaxy_list[0])
+    for i in range(len(galaxy_list)):
+        galaxy_image = galaxy_image+galaxy_list[i]
+    model = galaxy_image
+    norm_residual = (data - model)/noise
+
+    # TODO: only use central profile
+    norm_residual *= model # scale by sersic profile 
+    residual_sum = sum(map(sum, np.abs(norm_residual))) # sum absolute value of all elements of 2d array 
+
     # save the results
 
     # save the plots
@@ -423,6 +522,9 @@ def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels):
     galight_dict['config']['object'] = object
     galight_dict['config']['filter'] = filter
     galight_dict['config']['pixelscale'] = pixelscale
+
+    # save the summed residual 
+    galight_dict['residual_sum'] = residual_sum
 
     # save the dictionary
     with open(f'{results_dir}/{object}_{filter}.pkl', 'wb') as handle:
