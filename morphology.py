@@ -83,7 +83,7 @@ def make_PSFs(psf_dir, pixelscales=[0.02, 0.04], use_NIRCam=True, use_MIRI=False
             psf.writeto(f'{psf_dir}/{filter}_{pixelscale}.fits')
 
 
-def galight_free(object, filter, save_dir, nsigma, npixels, fit_bulge=False):
+def galight_free(object, filter, save_dir, nsigma, npixels, fit_bulge=False, masks=[]):
     ''' Fits sersic profile to object with a stacked image and stacked PSF.
 
     Parameters: 
@@ -101,13 +101,15 @@ def galight_free(object, filter, save_dir, nsigma, npixels, fit_bulge=False):
             The number of connected pixels, each greater than threshold, that an object must have to be detected.
         fit_bulge: bool
             If the function should fit a separate Sersic profile to the bulge.
+        masks: list of ints
+            The ids of objects to be masked when fitting.
     
     Returns:
     --------
         galight_dict: dict
             Contains Sersic and other paramters of the fit.
     '''
-
+    
     # config
     program_ID = object.split('_')[0]
     object_ID = object.split('_')[1]
@@ -145,7 +147,7 @@ def galight_free(object, filter, save_dir, nsigma, npixels, fit_bulge=False):
                                rm_bkglight=True, if_plot=False, zp=zeropoint)
 
     radius = 1.2/pixelscale # arcsec/arcsec
-    data_process.generate_target_materials(radius=radius, create_mask=False, if_plot=False,
+    data_process.generate_target_materials(masks=masks, radius=radius, if_plot=False,
                                            nsigma=nsigma, exp_sz=1.5, npixels=npixels,
                                            detect=True, detection_path=save_path)
 
@@ -185,12 +187,11 @@ def galight_free(object, filter, save_dir, nsigma, npixels, fit_bulge=False):
         fit_sepc = FittingSpecify(data_process)
         # the 'fix_n_list' will fix Sersic_n as 4 for the comp0 (bulge), and as 1 for the comp1 (disk).
         fit_sepc.prepare_fitting_seq(point_source_num = 0, fix_n_list= [[0,4], [1,1]]) 
-        fit_sepc.build_fitting_seq()
-        # fit_sepc.plot_fitting_sets()
+    else:
+        # set up the model
+        fit_sepc = FittingSpecify(data_process)
+        fit_sepc.prepare_fitting_seq(point_source_num = 0) 
 
-    # set up the model
-    fit_sepc = FittingSpecify(data_process)
-    fit_sepc.prepare_fitting_seq(point_source_num = 0) 
     fit_sepc.build_fitting_seq()
     # fit_sepc.plot_fitting_sets() # to see object slections 
 
@@ -199,8 +200,7 @@ def galight_free(object, filter, save_dir, nsigma, npixels, fit_bulge=False):
     fit_run = FittingProcess(fit_sepc, savename=savename, fitting_level=['shallow', 'deep'])
     fit_run.run(algorithm_list = ['MCMC', 'MCMC'])
 
-    # TODO: make into separate function-------------------------------------------------------------------------------------------------
-    # sum residual 
+    # get data and model to calculate weighted residual
     data = fit_run.fitting_specify_class.kwargs_data['image_data']
     galaxy_list = fit_run.image_host_list
     galaxy_image = np.zeros_like(galaxy_list[0])
@@ -208,19 +208,13 @@ def galight_free(object, filter, save_dir, nsigma, npixels, fit_bulge=False):
         galaxy_image = galaxy_image+galaxy_list[i]
     model = galaxy_image
 
-    weighted_residual = (data - model) / model  
-    residual_sum = sum(map(sum, np.abs(weighted_residual))) # sum absolute value of all elements of 2d array 
-    #----------------------------------------------------------------------------------------------------------------------------------
-
     # save the results
 
     # save the plots
     fit_run.model_plot(save_plot=True, show_plot=False)
     fit_run.plot_final_galaxy_fit(target_ID=object, save_plot=True, show_plot=False)
 
-
     print(list(fit_run.fitting_specify_class.kwargs_data.keys()))
-
 
     # change the name of the saved plot
     src = f'{save_path}/galight_{filter}_galaxy_final_plot.pdf'
@@ -261,8 +255,9 @@ def galight_free(object, filter, save_dir, nsigma, npixels, fit_bulge=False):
     galight_dict['config']['filter'] = filter
     galight_dict['config']['pixelscale'] = pixelscale
 
-    # save the summed residual 
-    galight_dict['residual_sum'] = residual_sum
+    # save the data and model arrays
+    galight_dict['data'] = data
+    galight_dict['model'] = model
 
     # save the dictionary
     with open(f'{results_dir}/{object}_{filter}.pkl', 'wb') as handle:
@@ -271,7 +266,7 @@ def galight_free(object, filter, save_dir, nsigma, npixels, fit_bulge=False):
     return galight_dict
 
 
-def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels, fit_bulge=True):
+def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels, fit_bulge=True, masks=[]):
     ''' Fits an object using some fixed sersic paramters from galight_free(). Should be ran on individual fiter images and their 
     corresponding PSFs.
 
@@ -294,6 +289,8 @@ def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels, 
             have to be detected.
         fit_bulge: bool
             If the function should fit a separate Sersic profile to the bulge.
+        masks: list of ints
+            The ids of objects to be masked when fitting.
     
     Returns:
     --------
@@ -374,12 +371,18 @@ def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels, 
             if cond_0 or cond_1 or cond_2:
                 logL -= 10**15
             return logL
-
-
-    # set up the model
-    fit_sepc = FittingSpecify(data_process)
-    fit_sepc.prepare_fitting_seq(point_source_num = 0) # running with condition=condition_bulgedisk breaks 
+        
+        # set up the model
+        fit_sepc = FittingSpecify(data_process)
+        # the 'fix_n_list' will fix Sersic_n as 4 for the comp0 (bulge), and as 1 for the comp1 (disk).
+        fit_sepc.prepare_fitting_seq(point_source_num = 0, fix_n_list= [[0,4], [1,1]]) 
+    else:
+        # set up the model
+        fit_sepc = FittingSpecify(data_process)
+        fit_sepc.prepare_fitting_seq(point_source_num = 0) 
+        
     fit_sepc.build_fitting_seq()
+    # fit_sepc.plot_fitting_sets() # to see object slections 
 
     # set up the prior (init, sigma, fixed, lower, upper)
 
@@ -464,19 +467,16 @@ def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels, 
     fit_run = FittingProcess(fit_sepc, savename=savename, fitting_level=['shallow', 'deep'])
     fit_run.run(algorithm_list = ['MCMC', 'MCMC'])
 
-    # sum residual 
+    # get data and model to calculate weighted residual
     data = fit_run.fitting_specify_class.kwargs_data['image_data']
-    noise = fit_run.fitting_specify_class.kwargs_data['noise_map']
     galaxy_list = fit_run.image_host_list
     galaxy_image = np.zeros_like(galaxy_list[0])
     for i in range(len(galaxy_list)):
         galaxy_image = galaxy_image+galaxy_list[i]
     model = galaxy_image
-    norm_residual = (data - model)/noise
 
-    # TODO: only use central profile
-    norm_residual *= model # scale by sersic profile 
-    residual_sum = sum(map(sum, np.abs(norm_residual))) # sum absolute value of all elements of 2d array 
+    # TODO: call function
+    weighted_residual = 0
 
     # save the results
 
@@ -524,7 +524,7 @@ def galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels, 
     galight_dict['config']['pixelscale'] = pixelscale
 
     # save the summed residual 
-    galight_dict['residual_sum'] = residual_sum
+    galight_dict['weigthed_residual'] = weighted_residual
 
     # save the dictionary
     with open(f'{results_dir}/{object}_{filter}.pkl', 'wb') as handle:

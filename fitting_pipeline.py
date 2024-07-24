@@ -9,8 +9,9 @@ import pickle as pk
 import glob
 import os
 import PyPDF2
-from morphology import galight_free, galight_prior
-from photometry import make_stacked_PSF, make_stacked_image
+from morphology import *
+from photometry import *
+from weighted_residual import *
 
 def get_z(object, data_dir):
     ''' Returns the redshift of a given object from redshifts_dict.pk.
@@ -85,7 +86,7 @@ def get_filter_list(object, data_dir, z):
     return filter_list
 
  
-def galight_prior_loop(object, data_dir, psf_dir, save_dir, npixels, nsigma):
+def galight_prior_loop(object, data_dir, psf_dir, save_dir, npixels, nsigma, masks=[]):
     ''' Runs galight_prior on all images and their corresponding PSFs for the object.
 
     Parameters: 
@@ -103,6 +104,8 @@ def galight_prior_loop(object, data_dir, psf_dir, save_dir, npixels, nsigma):
         npixels: int
             The value for Galight paramter nsigma used. The number of connected pixels, each greater than threshold, that an object must
             have to be detected.
+        masks: list of ints
+            The ids of objects to be masked when fitting.
     '''
 
     program_ID = object.split('_')[0]
@@ -120,10 +123,10 @@ def galight_prior_loop(object, data_dir, psf_dir, save_dir, npixels, nsigma):
         for img in img_filters:
             if filter + '_' in img and 'm' not in filter: # avoid convolved and m filters
                 print(filter + ':')
-                galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels)
+                galight_prior(object, data_dir, psf_dir, save_dir, filter, nsigma, npixels, masks)
 
 
-def fit_object(object, data_dir, psf_dir, save_dir, nsigma, npixels):
+def fit_object(object, data_dir, psf_dir, save_dir, nsigma, npixels, masks=[], fit_all_filters=False):
     ''' Executes all necessary functions to fit all filters of an object. Assumes PSFs already exist.
 
     Parameters: 
@@ -141,6 +144,10 @@ def fit_object(object, data_dir, psf_dir, save_dir, nsigma, npixels):
         npixels: int
             The value for Galight paramter nsigma used. The number of connected pixels, each greater than threshold, that an object must
             have to be detected.
+        masks: list of ints
+            The ids of objects to be masked when fitting.
+        fit_all_filters: bool
+            If fits for all of the object's filters should be created using galight_prior.
     '''
 
     z = get_z(object, data_dir)
@@ -150,8 +157,9 @@ def fit_object(object, data_dir, psf_dir, save_dir, nsigma, npixels):
     make_stacked_PSF(object, data_dir, psf_dir, save_dir, filter_list)
     make_stacked_image(object, data_dir, save_dir, filter_list)
 
-    galight_free(object, 'SW', save_dir, nsigma, npixels)
-    # galight_prior_loop(object, data_dir, psf_dir, save_dir, nsigma, npixels)
+    galight_free(object, 'SW', save_dir, nsigma, npixels, masks=masks)
+    if fit_all_filters:
+        galight_prior_loop(object, data_dir, psf_dir, save_dir, nsigma, npixels, masks)
 
  
 def fit_all_objects(data_dir, psf_dir, save_dir, nsigma=1.9, npixels=4):
@@ -175,9 +183,45 @@ def fit_all_objects(data_dir, psf_dir, save_dir, nsigma=1.9, npixels=4):
     programs = os.listdir(data_dir) 
     for program in sorted(programs, key=int): # sort in ascending order
         objects = os.listdir(f'{data_dir}/{program}')[0:-1] # exclude redshifts_dict.pkl
-        for object in sorted(objects, key=int)[sorted(objects, key=int).index('1598'):]: # sort in ascending order
+        for object in sorted(objects, key=int)[sorted(objects, key=int).index('0'):]: # sort in ascending order
             print(f'Fitting object {program}_{object}: ################################################################################')
             fit_object(f'{program}_{object}', data_dir, psf_dir, save_dir, nsigma, npixels)
+
+
+def calc_all_weighted_residuals(data_dir, psf_dir, save_dir, nsigma=1.9, npixels=4):
+    ''' Calls the nessecary functions on all objects in all programs to calculate a weighted residual sum and save it to the objects 
+    respective Galight dict.
+    
+    Parameters: 
+    -----------
+        data_dir: str 
+            File path to where the program sci and wht .fits data is stored.
+        psf_dir: str
+            File path to where the .fits PSF files for filters are stored.
+        save_dir: str
+            File path to where the outputed stacked .fits files, .pdf plots, and .pkl dictionaries are saved to for all programs.
+        nsigma: float
+            The value for Galight paramter nsigma used. The s/n defined to detect all the objects in the image stamp.
+        npixels: int
+            The value for Galight paramter nsigma used. The number of connected pixels, each greater than threshold, that an object must
+            have to be detected.
+    '''
+
+    programs = os.listdir(data_dir) 
+    for program in sorted(programs, key=int): # sort in ascending order
+        objects = os.listdir(f'{data_dir}/{program}')[0:-1] # exclude redshifts_dict.pkl
+        for object in sorted(objects, key=int)[sorted(objects, key=int).index('0'):]: # sort in ascending order
+            print(f'Calculating object {program}_{object}: ############################################################################')
+            
+            # find objects to mask using previous unmasked fit
+            segmentation_map, data, model = get_fitting_arrays(object, save_dir, results_dir)
+            all_objects = find_all_objects(segmentation_map)
+            
+            # fit central object only by masking all other objects
+            fit_object(f'{program}_{object}', data_dir, psf_dir, save_dir, nsigma, npixels, masks=all_objects)
+
+            # calculate weighted residual using the masked fit of the central object 
+            calc_weighted_residual(object, save_dir, results_dir)
 
 
 def merge_plots(save_dir, program_ID, nsigma, npixels, output_dir):
@@ -201,13 +245,18 @@ def merge_plots(save_dir, program_ID, nsigma, npixels, output_dir):
     pdf_list = []
 
     objects = os.listdir(f'{save_dir}/{program_ID}')
-    for object in objects: # TODO: assemble in ascending order
-        pdf_list.append(f'{save_dir}/{program_ID}/{object}/galight_SW_galaxy_final_plot.pdf')
+    for object in sorted(objects, key=int):
+        pdf_list.append(f'{save_dir}/{program_ID}/{object}/galight_SW_combined_plot.pdf')
 
     pdf_merger = PyPDF2.PdfMerger()
 
     for pdf in pdf_list:
         pdf_merger.append(pdf)
 
-    with open(f'{output_dir}/{program_ID}_merged_pdf_bulge_{str(nsigma)}_{str(npixels)}.pdf', 'wb') as output_pdf:
+    with open(f'{output_dir}/{program_ID}_merged_pdf_{str(nsigma)}_{str(npixels)}.pdf', 'wb') as output_pdf:
         pdf_merger.write(output_pdf)
+
+
+def merge_weighted_residuals():
+
+    return 
