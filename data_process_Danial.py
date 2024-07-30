@@ -26,6 +26,7 @@ from galight.tools.measure_tools import search_local_max, measure_FWHM
 from galight.tools.astro_tools import plt_many_fits
 import lenstronomy
 from galight.tools.measure_tools import detect_obj, mask_obj
+
 class DataProcess(object):
     """
     A class to Process the data, including the following feature:
@@ -107,7 +108,7 @@ class DataProcess(object):
         else:
             self.zp = zp
 
-    def generate_target_materials(self, cut_kernel = None,  radius=None, radius_list = None,
+    def generate_target_materials(self, cut_kernel = None, radius=None, radius_list = None,
                                   bkg_std = None, if_select_obj = False, create_mask = False,
                                   if_plot=None, use_moments = True, show_materials=None,
                                   skip = False, detect=True, detection_path=None, **kwargs):
@@ -143,8 +144,8 @@ class DataProcess(object):
 
             **kwargs:
                 Arguments can also passed to detect_obj()
-
         """
+
         if if_plot == None:
             if_plot = self.if_plot
         if show_materials == None:

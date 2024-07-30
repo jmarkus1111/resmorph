@@ -14,6 +14,9 @@ import corner
 import pickle
 import copy
 import matplotlib as matt
+from matplotlib.backends.backend_pdf import PdfPages
+import matplotlib.image as mpimg
+import pickle as pkl
 matt.rcParams['font.family'] = 'STIXGeneral'
 from lenstronomy.Plots.model_plot import ModelPlot
 from galight.tools.plot_tools import total_compare
@@ -341,36 +344,82 @@ class FittingProcess(object):
         else:
             plt.close()
 
-    def plot_final_galaxy_fit(self, if_annuli=False, show_plot = True, arrows=False, save_plot = False, target_ID = None,
+    def plot_final_galaxy_fit(self, if_annuli=False, show_plot = True, arrows=False, save_plot = True, target_ID = None,
                               cmap= None):
         """
         Plot the compact fitting result, if galaxies is fitted (i.e., no point source).
         """
+
+        # make segmentation plot
+        savename = self.savename
+        with open(savename[:-10]+'detection_dict.pkl', 'rb') as handle:
+            detection_dict = pkl.load(handle)
+
+        segm_deblend = detection_dict['segm_deblend']
+        apertures = detection_dict['apertures']
+
+        fig1, ax1 = plt.subplots(figsize=(6, 6))
+        ax1.imshow(segm_deblend, origin='lower')
+
+        # Annotate the segmentation image with aperture positions and labels
+        for i, aperture in enumerate(apertures):
+            plt_xi, plt_yi = aperture.positions
+            ax1.text(plt_xi, plt_yi, '{0}'.format(i), fontsize=16, bbox={'facecolor': 'white', 'alpha': 0.5, 'pad': 1})
+
+        ax1.set_title('Segmentation', fontsize=24)
+        ax1.tick_params(labelsize=15)
+        fig1.tight_layout()
+
+        fig1.savefig(savename+'_segmentation_map.png', bbox_inches='tight', pad_inches=0)
+        plt.close(fig1)
+
+        # make fitting plot
         data = self.fitting_specify_class.kwargs_data['image_data']
         noise = self.fitting_specify_class.kwargs_data['noise_map']
         galaxy_list = self.image_host_list
-        galaxy_image = np.zeros_like(galaxy_list[0])
+        galaxy_image = np.zeros_like(galaxy_list[0]) 
         if target_ID is None:
             target_ID = 'target_ID'
         for i in range(len(galaxy_list)):
             galaxy_image = galaxy_image+galaxy_list[i]
-        model = galaxy_image
-        norm_residual = (data - model)/noise
-        flux_dict_2d = {'data':data, 'model':model, 'normalized residual':norm_residual}
+        model = galaxy_image 
+        central_model = galaxy_list[0]
+        norm_residual = (data - central_model)/noise
+        flux_dict_2d = {'data':data, 'central model':central_model, 'normalized residual':norm_residual}
         self.flux_2d_out = flux_dict_2d
         flux_dict_1d = {'data':data, 'model ({0} galaxy(s))'.format(len(galaxy_list)):model}
         self.flux_1d_out = flux_dict_1d
-        fig = total_compare(list(flux_dict_2d.values()), list(flux_dict_2d.keys()), list(flux_dict_1d.values()), list(flux_dict_1d.keys()), deltaPix = self.fitting_specify_class.deltaPix,
+
+        fig2 = total_compare(list(flux_dict_2d.values()), list(flux_dict_2d.keys()), list(flux_dict_1d.values()), list(flux_dict_1d.keys()), deltaPix = self.fitting_specify_class.deltaPix,
                       zp=self.zp, if_annuli=if_annuli, arrows= arrows, show_plot = show_plot,
                       mask_image = self.fitting_specify_class.kwargs_likelihood['image_likelihood_mask_list'][0],
                       target_ID = target_ID, cmap=cmap)
         if save_plot == True:
-            savename = self.savename
-            fig.savefig(savename+"_galaxy_final_plot.pdf")
+            fig2.savefig(savename+'_galaxy_final_plot.png', bbox_inches='tight', pad_inches=.1)
         if show_plot == True:
-            plt.show()
+            plt.show(fig2)
         else:
-            plt.close()
+            plt.close(fig2)
+
+        # make combined plot
+        fig_combined, axs = plt.subplots(1, 2, figsize=(34, 6))
+
+        img1 = mpimg.imread(savename+'_segmentation_map.png')
+        axs[0].imshow(img1)
+        axs[0].axis('off')
+
+        img2 = mpimg.imread(savename+'_galaxy_final_plot.png')
+        axs[1].imshow(img2)
+        axs[1].axis('off')
+
+        # remove excess spacing 
+        fig_combined.tight_layout()
+        fig_combined.subplots_adjust(wspace=-0.36)
+
+        # Save the combined figure to a PDF
+        with PdfPages(savename+'_combined_plot.pdf') as pdf:
+            pdf.savefig(fig_combined, bbox_inches='tight')
+        plt.close(fig_combined)
 
     def plot_all(self, target_ID=None):
         """
