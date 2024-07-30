@@ -10,9 +10,9 @@ import astropy.coordinates
 from astropy.io import fits
 import webbpsf
 import subprocess
-from galight.data_process_Danial import DataProcess
-from galight.fitting_specify_Danial import FittingSpecify
-from galight.fitting_process_Danial import FittingProcess
+from galight.data_process_modified import DataProcess
+from galight.fitting_specify_modified import FittingSpecify
+from galight.fitting_process_modified import FittingProcess
 os.environ['WEBBPSF_PATH'] = '/Users/jmark/OneDrive/Desktop/DARK REU/morphology_fitting/webbpsf-data'
 
 results_dir = '/Users/jmark/OneDrive/Desktop/DARK REU/morphology_fitting/morph/results'
