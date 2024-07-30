@@ -1,6 +1,6 @@
 ''' Functions related to calculating the "weighted residual".
 
-    calc_weighted residual should be exectued with an object that has been previously fitted with the proper masks.
+    calc_weighted residual should be exectued with an object that has been previously fitted.
 '''
 
 import pickle as pkl
@@ -27,6 +27,8 @@ def get_fitting_arrays(object, save_dir, results_dir):
             2d array of the original photometry data.
         model: array of arrays of floats 
             2d array of the reconstructed image based on the Galight fit.
+        central_model: array of arrays of floats 
+            2d array of the reconstructed image based on the Galight fit of the central object only.
     '''
 
     program_ID = object.split('_')[0]
@@ -44,8 +46,10 @@ def get_fitting_arrays(object, save_dir, results_dir):
 
     data = galight_dict['data']
     model = galight_dict['model']
+    central_model = galight_dict['central model']
+    noise = galight_dict['noise']
 
-    return segmentation_map, data, model
+    return segmentation_map, data, model, central_model, noise
 
 
 def find_adjacent_objects(segmentation_map):
@@ -106,7 +110,7 @@ def find_all_objects(segmentation_map):
 
 
 def calc_weighted_residual(object, save_dir, results_dir):
-    ''' Calculates the "weighted residual" for a given object. Assumes the fit of only the central object is already done. The weighted 
+    ''' Calculates the "weighted residual" for a given object. Assumes the object has already been fited. The weighted 
     residual is a single number that quantifies how well the central and nearby objects are described by the Sersic profile.
 
     Parameters: 
@@ -130,7 +134,7 @@ def calc_weighted_residual(object, save_dir, results_dir):
     object_ID  = object.split('_')[1]
 
     # get new model from only the central fit
-    segmentation_map, data, central_model = get_fitting_arrays(object, save_dir, results_dir)
+    segmentation_map, data, model, central_model, noise = get_fitting_arrays(object, save_dir, results_dir)
 
     adjacent_objects = find_adjacent_objects(segmentation_map)
 
@@ -139,18 +143,18 @@ def calc_weighted_residual(object, save_dir, results_dir):
     for i in range(len(segmentation_map)):
         for j in range(len(segmentation_map[0])):
             if segmentation_map[i][j] - 1 in adjacent_objects or segmentation_map[i][j] - 1 == 0:
-                # sum = |(data - central model) / central model|
-                weighted_residual += np.abs((data[i][j] - central_model[i][j]) / central_model[i][j]) 
+                # sum = |(data - central model)| / central model
+                weighted_residual += np.abs((data[i][j] - central_model[i][j])) / central_model[i][j]
 
     # save the summed residual in the object's SW dict
 
     with open(f'{results_dir}/{program_ID}_{object_ID}_SW.pkl', 'rb') as handle:
         galight_dict = pkl.load(handle)
     
-    galight_dict['weighted_residual'] = weighted_residual
+    galight_dict['weighted residual'] = weighted_residual
 
     with open(f'{results_dir}/{program_ID}_{object_ID}_SW.pkl', 'wb') as handle:
         pkl.dump(galight_dict, handle)
                 
-    print(f'WEIGHTED RESIDUAL: {weighted_residual}')
+    print(f'{program_ID}_{object_ID}: {weighted_residual}')
     return weighted_residual
