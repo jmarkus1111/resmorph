@@ -7,7 +7,11 @@ Installation
     $ pip install -i https://test.pypi.org/simple/ resmorph
 
 Getting Started
-------------
+---------------
+[Example notebook](https://github.com/jmarkus1111/resmorph/blob/main/example_notebook.ipynb)
+
+Tested and recomended with Python == 3.9.19
+[Further package requirements](https://github.com/jmarkus1111/resmorph/blob/main/requirements.txt)
   
 Citation
 --------
