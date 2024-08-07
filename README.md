@@ -10,8 +10,7 @@ Getting Started
 ---------------
 [Example notebook](https://github.com/jmarkus1111/resmorph/blob/main/example_notebook.ipynb)
 
-Tested and recomended with Python == 3.9.19
-[Further package requirements](https://github.com/jmarkus1111/resmorph/blob/main/requirements.txt)
+Tested and recomended with Python == 3.9.19, as well as these [further package requirements](https://github.com/jmarkus1111/resmorph/blob/main/requirements.txt)
   
 Citation
 --------
