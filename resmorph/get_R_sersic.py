@@ -27,7 +27,7 @@ def get_R_sersic(results_dir, object, z):
     '''
 
     # set cosmology 
-    cosmo = FlatLambdaCDM(H0 = 67.8, Om0 = 0.308)
+    cosmo = FlatLambdaCDM(H0 = 70, Om0 = 0.308)
 
     program_ID = object.split('_')[0]
     object_ID  = object.split('_')[1]
